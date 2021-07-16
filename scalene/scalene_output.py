@@ -1,5 +1,6 @@
 import shutil
 import sys
+import tempfile
 
 from collections import OrderedDict
 from operator import itemgetter
@@ -175,7 +176,10 @@ class ScaleneOutput:
             else f"{(n_python_fraction * 100):4.0f}%"
         )
         n_copy_b = stats.memcpy_samples[fname][line_no]
-        n_copy_mb_s = n_copy_b / (1024 * 1024 * stats.elapsed_time)
+        if stats.elapsed_time:
+            n_copy_mb_s = n_copy_b / (1024 * 1024 * stats.elapsed_time)
+        else:
+            n_copy_mb_s = 0
         n_copy_mb_s_str: str = (
             "" if n_copy_mb_s < 0.5 else f"{n_copy_mb_s:6.0f}"
         )
@@ -304,7 +308,6 @@ class ScaleneOutput:
         stats: ScaleneStatistics,
         pid: int,
         profile_this_code: Callable[[Filename, LineNumber], bool],
-        python_alias_dir_name: Filename,
         python_alias_dir: Filename,
         profile_memory: bool = True,
         reduced_profile: bool = False,
@@ -312,11 +315,7 @@ class ScaleneOutput:
         """Write the profile out."""
         # Get the children's stats, if any.
         if not pid:
-            stats.merge_stats(python_alias_dir_name)
-            try:
-                shutil.rmtree(python_alias_dir)
-            except BaseException:
-                pass
+            stats.merge_stats(python_alias_dir)
         current_max: float = stats.max_footprint
         # If we've collected any samples, dump them.
         if (
@@ -338,7 +337,6 @@ class ScaleneOutput:
         if not all_instrumented_files:
             # We didn't collect samples in source files.
             return False
-        title = Text()
         mem_usage_line: Union[Text, str] = ""
         growth_rate = 0.0
         if profile_memory:
@@ -359,7 +357,7 @@ class ScaleneOutput:
                 if current_max > 1024:
                     mem_usage_line = Text.assemble(
                         "Memory usage: ",
-                        ((spark_str, "blue")),
+                        ((spark_str, "dark_green")),
                         (
                             f" (max: {(current_max / 1024):6.2f}GB, growth rate: {growth_rate:3.0f}%)\n"
                         ),
@@ -368,13 +366,13 @@ class ScaleneOutput:
                     # Otherwise, use MB.
                     mem_usage_line = Text.assemble(
                         "Memory usage: ",
-                        ((spark_str, "blue")),
+                        ((spark_str, "dark_green")),
                         (
                             f" (max: {current_max:6.2f}MB, growth rate: {growth_rate:3.0f}%)\n"
                         ),
                     )
 
-        null = open("/dev/null", "w")
+        null = tempfile.TemporaryFile(mode="w+")
 
         # Get column width of the terminal and adjust to fit.
         # Note that Scalene works best with at least 132 columns.
@@ -390,7 +388,11 @@ class ScaleneOutput:
                 pass
 
         console = Console(
-            width=column_width, record=True, force_terminal=True, file=null
+            width=column_width,
+            record=True,
+            force_terminal=True,
+            file=null,
+            force_jupyter=False,
         )
         # Build a list of files we will actually report on.
         report_files: List[Filename] = []
@@ -418,7 +420,7 @@ class ScaleneOutput:
         # Don't actually output the profile if we are a child process.
         # Instead, write info to disk for the main process to collect.
         if pid:
-            stats.output_stats(pid, python_alias_dir_name)
+            stats.output_stats(pid, python_alias_dir)
             return True
 
         if len(report_files) == 0:
@@ -457,38 +459,39 @@ class ScaleneOutput:
             )
 
             tbl.add_column(
-                "Line", style="dim", justify="right", no_wrap=True, width=4
+                Markdown("Line", style="dim"), style="dim", justify="right", no_wrap=True, width=4
             )
             tbl.add_column(
-                Markdown("Time  " + "\n" + "_Python_"), no_wrap=True, width=6
+                Markdown("Time  " + "\n" + "_Python_", style="blue"), style="blue", no_wrap=True, width=6
             )
             tbl.add_column(
-                Markdown("––––––  \n_native_"), no_wrap=True, width=6
+                Markdown("––––––  \n_native_", style="blue"), style="blue", no_wrap=True, width=6
             )
             tbl.add_column(
-                Markdown("––––––  \n_system_"), no_wrap=True, width=6
+                Markdown("––––––  \n_system_", style="blue"), style="blue", no_wrap=True, width=6
             )
             if self.gpu:
                 tbl.add_column(
-                    Markdown("––––––  \n_GPU_"), no_wrap=True, width=6
+                    Markdown("––––––  \n_GPU_", style="yellow4"), style="yellow4", no_wrap=True, width=6
                 )
 
             other_columns_width = 0  # Size taken up by all columns BUT code
 
             if profile_memory:
                 tbl.add_column(
-                    Markdown("Memory  \n_Python_"), no_wrap=True, width=7
+                    Markdown("Memory  \n_Python_", style="dark_green"), style="dark_green", no_wrap=True, width=7
                 )
                 tbl.add_column(
-                    Markdown("––––––  \n_net_"), no_wrap=True, width=6
+                    Markdown("––––––  \n_net_", style="dark_green"), style="dark_green", no_wrap=True, width=6
                 )
                 tbl.add_column(
-                    Markdown("–––––––––––  \n_timeline_/%"),
+                    Markdown("–––––––––––  \n_timeline_/%", style="dark_green"),
+                    style="dark_green",
                     no_wrap=True,
                     width=14,
                 )
                 tbl.add_column(
-                    Markdown("Copy  \n_(MB/s)_"), no_wrap=True, width=6
+                    Markdown("Copy  \n_(MB/s)_", style="yellow4"), style="yellow4", no_wrap=True, width=6
                 )
                 other_columns_width = 75 + (6 if self.gpu else 0)
                 tbl.add_column(
@@ -551,7 +554,7 @@ class ScaleneOutput:
                         stats,
                         profile_this_code,
                         profile_memory=profile_memory,
-                        force_print=True,
+                        force_print=False,
                         suppress_lineno_print=False,
                         is_function_summary=False,
                         reduced_profile=reduced_profile,
@@ -658,7 +661,7 @@ class ScaleneOutput:
                         + ("%5.0f" % (net_mallocs[net_malloc_lineno]))
                         + " MB"
                     )
-                    console.print(output_str)
+                    console.print(Markdown(output_str, style="dark_green"))
                     number += 1
 
             # Only report potential leaks if the allocation velocity (growth rate) is above some threshold

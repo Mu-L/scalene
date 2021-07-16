@@ -8,12 +8,15 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+
+#if !defined(_WIN32)
 #include <unistd.h>  // for getpid()
+#endif
 
-#include "sampler.hpp"
 #include "printf.h"
+#include "sampler.hpp"
 
-#if !defined(__APPLE__)
+#if !defined(__APPLE__) && !defined(_WIN32)
 #include <endian.h>
 #endif
 

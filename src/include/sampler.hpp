@@ -1,8 +1,12 @@
 #pragma once
 
+#if !defined(_WIN32)
+#include <pthread.h>
 #include <unistd.h>
+#endif
 
 #include <cmath>
+#include <cstdint>
 #include <iostream>
 #include <random>
 #include <thread>
@@ -13,10 +17,8 @@
 #define SAMPLER_DETERMINISTIC 1
 #define SAMPLER_LOWDISCREPANCY 0
 
-#include <pthread.h>
 #include <stdio.h>
 #include <time.h>
-#include <unistd.h>
 
 #if SAMPLER_LOWDISCREPANCY
 #include "lowdiscrepancy.hpp"
@@ -60,7 +62,7 @@ class Sampler {
     if (unlikely(_next <= sz)) {
       return updateSample(sz - _next);
     }
-    assert(sz <= _next);
+    assert(sz < _next);
     _next -= sz;
     return 0;
   }
